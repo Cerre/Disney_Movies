@@ -7,6 +7,10 @@ import regex as re
 import datetime
 import pickle
 import json
+import pdb
+
+
+
 
 def get_all_urls(base_url, url):
     r = requests.get(url)
@@ -24,8 +28,6 @@ def get_all_urls(base_url, url):
 
 
 def request_from_webiste(url):
-    # import pdb
-    # pdb.set_trace()
     r = requests.get(url);
     soup = BeautifulSoup(r.text, 'html.parser');
     soup.prettify();
@@ -34,28 +36,46 @@ def request_from_webiste(url):
 def gather_data_from_box(soup):
     infobox = soup.find_all('table',class_='infobox vevent')
     info_dict = defaultdict()
+    alternative_box = soup.find_all('t')
+    
     for table in infobox:
         rows = table.find_all('tr')
         for row in rows:
-            attributes = row.find_all('th', recursive=True)
+            attributes = row.find_all('th', recursive = True)
             information = row.find_all('td')
+                
+            # pdb.set_trace()
             for attribute, info in zip(attributes,information):
-                key = attribute.text
-                value = list(filter(lambda x: x!='',info.text.split('\n')))
+                key = attribute.get_text(" ", strip=True)
+                codetags = info.find_all('b')
+                for codetag in codetags:
+                    codetag.extract()
+                
+                value = list(filter(lambda x: x!='', info.text.split('\n')))
                 info_dict[key] = value
-    info_dict = cleanup_values(info_dict)
     return info_dict
 
 
-def cleanup_values(info_dict):
-    info_dict = remove_brackets(info_dict)
-    info_dict = fix_dates(info_dict)
-    return info_dict
+def cleanup_values(db):
+    for key, value in db.items():
+        db[key] = remove_brackets(db[key])
+        db[key] = fix_dates(db[key])
+        db[key] = convert_time(db[key])
+    return db
 
 def remove_brackets(info_dict):
     for key,  value in info_dict.items():
         info_dict[key] = list(map(lambda x: re.sub("[\[].*?[\]]", "", x), value))
     return info_dict
+
+
+def convert_time(info_dict):
+
+    if 'Running time' in info_dict.keys():
+        info_dict['Running time'] = list(map(lambda x : int(re.search(r'\d+', x).group()), info_dict['Running time']))
+    return info_dict
+
+    
 
 
 def fix_dates(info_dict):
@@ -73,7 +93,7 @@ def fix_dates(info_dict):
 
 
 def build_db(links):
-    db = defaultdict()
+    db = defaultdict(lambda: defaultdict(str))
     i = 1
     N = len(links)
     for key, value in links.items():
@@ -89,10 +109,11 @@ def build_db(links):
 def create_db(base_url, list_url):
     links = get_all_urls(base_url,list_url)
     movie_db = build_db(links)
-    filehandler = open('movie_db', 'wb') 
-    pickle.dump(movie_db, filehandler)
-    filehandler.close()
-    print("Created database and pickled into movie_db")
+    # filehandler = open('movie_db.pkl', 'wb') 
+    # pickle.dump(movie_db, filehandler)
+    # filehandler.close()
+    # print("Created database and pickled into movie_db")
+    return movie_db
 
 def load_db():
     infile = open("movie_db",'rb')
@@ -100,20 +121,29 @@ def load_db():
     infile.close()
     return db
 
-def write_to_json(db):
-    with open('movie_db.json', 'w', encoding='utf-8') as f:
+def write_to_json(db, filename):
+    with open(filename, 'w', encoding='utf-8') as f:
         json.dump(db, f, ensure_ascii=False, indent=4)
 
-def load_from_json(db):
-    db = load_data("movie_db.json")
+def load_from_json():
+    with open('movie_db.json') as json_file:
+        db = json.load(json_file)
+    return db 
 
 def main():
     list_url = 'https://en.wikipedia.org/wiki/List_of_Walt_Disney_Pictures_films'
     base_url = 'https://en.wikipedia.org'
-    # db = create_db(base_url, list_url)
-    db = load_db()
-    write_to_json(db)
-
+    db = create_db(base_url, list_url)
+    # write_to_json(db, "movie_db_clean.json")
+    # single_soup = request_from_webiste('https://en.wikipedia.org/wiki/Bambi')
+    # box = gather_data_from_box(single_soup)
+    # write_to_json(box, 'single_box.json')
+    
+    
+    # db = load_from_json()
+    db_clean = cleanup_values(db)
+    db_clean = write_to_json(db, "movie_db_clean.json")
+    # print(type(db))
     
 
 
